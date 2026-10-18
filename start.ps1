@@ -1,2 +1,2 @@
 Set-Location -LiteralPath $PSScriptRoot
-python app.py
+python app.py @args

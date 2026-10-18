@@ -69,8 +69,12 @@ def request(provider, path, body=None, timeout=90):
         return urllib.request.urlopen(req, timeout=timeout)
     except urllib.error.HTTPError as exc:
         # Do not forward provider response bodies: they can include sensitive request data.
+        with exc:
+            detail = exc.read(8192).decode("utf-8", errors="replace").lower()
         hints = {400: "โมเดลหรือพารามิเตอร์ไม่รองรับ", 401: "API key ไม่ถูกต้อง", 403: "บัญชีไม่มีสิทธิ์ใช้งาน",
                  404: "ไม่พบโมเดลหรือ endpoint", 429: "เกินโควตาหรือยอดคงเหลือไม่พอ"}
+        if any(word in detail for word in ("api key", "api_key", "apikey", "authentication", "authorization")):
+            hints[exc.code] = "API key ไม่ถูกต้องหรือบัญชีไม่อนุญาตให้ใช้ API นี้"
         raise ProviderError(f"{provider}: {hints.get(exc.code, 'ผู้ให้บริการตอบกลับผิดพลาด')} (HTTP {exc.code})") from None
     except (urllib.error.URLError, TimeoutError, OSError):
         raise ProviderError(f"เชื่อมต่อ {provider} ไม่สำเร็จ กรุณาตรวจว่าเซิร์ฟเวอร์เปิดอยู่และการเชื่อมต่อพร้อมใช้งาน") from None
@@ -86,6 +90,45 @@ def list_models(provider):
     if provider == "ollama":
         return sorted(item["name"] for item in result.get("models", []) if "name" in item)
     return sorted(item["id"] for item in result.get("data", []) if "id" in item)
+
+
+DEFAULT_BACKGROUND_MODELS = {"xai": "grok-4.20-0309-non-reasoning"}
+
+
+def background_model(provider, model, settings=None):
+    """Model for short background jobs (scene picking, summaries).
+
+    Order: Settings "backgroundModels" > env XAI_BACKGROUND_MODEL (xAI) > default > the room's chat model.
+    grok-4.3 is a reasoning model: measured live, a 12-token scene pick also burned ~600 hidden reasoning tokens
+    (billed as output). grok-4.20-0309-non-reasoning costs the same per token, picked the same scene and used 0.
+    """
+    chosen = ((settings or {}).get("backgroundModels") or {}).get(provider, "")
+    if isinstance(chosen, str) and chosen.strip():
+        return chosen.strip()
+    if provider == "xai" and os.environ.get("XAI_BACKGROUND_MODEL", "").strip():
+        return os.environ["XAI_BACKGROUND_MODEL"].strip()
+    return DEFAULT_BACKGROUND_MODELS.get(provider, model)
+
+
+def complete(provider, model, messages, max_tokens=120, timeout=30):
+    """Short non-streaming completion for background tasks (e.g. scene picking). Returns the text."""
+    if provider not in PROVIDERS - {"demo"}:
+        raise ProviderError("ผู้ให้บริการไม่ถูกต้อง")
+    if provider == "openai":
+        path, body = "/responses", {"model": model, "input": messages, "store": False, "max_output_tokens": max_tokens}
+    elif provider == "xai":
+        path, body = "/chat/completions", {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0}
+    else:
+        path, body = "/api/chat", {"model": model, "messages": messages, "stream": False, "format": "json",
+                                   "options": {"num_predict": max_tokens, "temperature": 0}}
+    with request(provider, path, body, timeout=timeout) as response:
+        data = json.load(response)
+    if provider == "openai":
+        return "".join(part.get("text", "") for item in data.get("output", []) if item.get("type") == "message"
+                       for part in item.get("content", []) if part.get("type") == "output_text")
+    if provider == "xai":
+        return "".join(choice.get("message", {}).get("content") or "" for choice in data.get("choices", [])[:1])
+    return data.get("message", {}).get("content", "")
 
 
 def stream(provider, model, messages):
@@ -111,7 +154,6 @@ def stream(provider, model, messages):
                     continue
                 line = line[5:].strip()
                 if line == "[DONE]":
-                    complete = True
                     break
             try:
                 data = json.loads(line)
