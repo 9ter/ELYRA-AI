@@ -10,3 +10,8 @@ __pycache__/
 *.db-shm
 *.db-wal
 *.log
+# User-created character cards, artwork and installation evidence (not application source).
+/Firefly/
+/Hoshino/
+/Yoon-Seo-ah/
+/Hiyuki/

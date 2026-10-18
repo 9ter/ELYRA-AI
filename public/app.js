@@ -85,8 +85,13 @@ function characterCard(character) {
   return `<article class="character-card tc-card"><button class="tc-card-hit" data-action="open-character" data-id="${character.id}" aria-label="ดูรายละเอียด ${esc(character.name)}"><img src="${art(character)}" alt="" loading="lazy"><span class="tc-card-meta"><strong>${esc(character.name)}</strong><small>${esc(character.subtitle || character.description)}</small></span></button><button class="favorite ${favorite ? "active" : ""}" data-action="favorite" data-id="${character.id}" aria-label="${favorite ? "นำออกจาก" : "เพิ่มใน"}รายการโปรด" aria-pressed="${favorite}">${icon("heart")}</button><div class="card-body">${state.view === "characters" ? `<button class="tc-card-start" data-action="start-chat" data-id="${character.id}">${icon("chat")}คุยเลย</button>` : ""}</div></article>`;
 }
 
+// Built-in sample characters (Luna, Kael, Mira, Ren) are still seeded by the backend but hidden in the UI.
+const visibleRooms = () => state.data.rooms.filter(room => room.character?.custom);
+const featuredCharacter = () => state.data.characters.find(character => character.custom && !character.archived);
+
 function filteredCharacters(customOnly = false) {
   return state.data.characters.filter(character => {
+    if (!character.custom) return false;
     if (customOnly ? Boolean(character.archived) !== Boolean(state.showArchived) : character.archived) return false;
     const matchSearch = `${character.name} ${character.description} ${character.tags.join(" ")}`.toLowerCase().includes(state.search.toLowerCase());
     const matchFilter = state.filter === "all" || (state.filter === "favorites" ? state.favorites.has(character.id) : character.genre === state.filter);
@@ -100,17 +105,19 @@ function empty(title, description, action = "", label = "", symbol = "sparkle") 
 
 function discover() {
   const characters = filteredCharacters();
+  const featured = featuredCharacter();
+  const rooms = visibleRooms();
   return `<div class="page">${pageHeading("ค้นพบเรื่องราวของคุณ", "พบใครสักคนที่ทำให้บทสนทนาธรรมดา… มีความหมายมากกว่าเดิม")}
-    ${!state.search ? `<section class="hero"><img class="hero-art" src="/assets/luna.svg" alt="ลูนาในร้านดอกไม้ยามค่ำคืน"><div class="hero-content"><div class="hero-label">A NEW CONNECTION AWAITS <span>FEATURED</span></div><h2>A little conversation.<br><em>An entirely new world.</em></h2><p>ร้านดอกไม้ในคืนฝนตก ชาอุ่น ๆ สักถ้วย<br>และใครบางคนที่พร้อมฟังเรื่องราวของคุณ</p>${button("start-chat", "เริ่มเรื่องราวกับ Luna", "primary", "sparkle", 'data-id="luna"')}</div><div class="hero-feature"><strong>Luna <span>✦</span></strong><small>The keeper of little wonders</small></div><div class="hero-dots" aria-hidden="true"><span></span><span></span><span></span></div></section>` : ""}
+    ${!state.search && featured ? `<section class="hero"><img class="hero-art" src="${art(featured)}" alt="${esc(featured.name)}"><div class="hero-content"><div class="hero-label">A NEW CONNECTION AWAITS <span>FEATURED</span></div><h2>A little conversation.<br><em>An entirely new world.</em></h2><p>${esc(featured.subtitle || featured.description)}</p>${button("start-chat", `เริ่มเรื่องราวกับ ${esc(featured.name)}`, "primary", "sparkle", `data-id="${featured.id}"`)}</div><div class="hero-feature"><strong>${esc(featured.name)} <span>✦</span></strong><small>${esc(featured.subtitle || "")}</small></div></section>` : ""}
     <section><div class="section-heading"><div><h2>${state.search ? `ผลการค้นหา “${esc(state.search)}”` : "ใครจะเป็นเรื่องราวบทต่อไป?"}</h2><small>${state.search ? `${characters.length} ตัวละครที่พบ` : "ตัวละครต่างบุคลิก สำหรับเรื่องราวในแบบของคุณ"}</small></div><span class="eyebrow">FIND YOUR CONNECTION</span></div><div class="filters" role="group" aria-label="ประเภทตัวละคร">${Object.entries(genreLabels).map(([id,label]) => `<button class="filter ${state.filter === id ? "active" : ""}" data-action="filter" data-filter="${id}" aria-pressed="${state.filter === id}">${label}</button>`).join("")}</div><div id="character-results">${characters.length ? `<div class="character-grid">${characters.map(characterCard).join("")}</div>` : empty("ยังไม่พบตัวละคร", "ลองค้นหาด้วยชื่อหรือเลือกประเภทอื่น")}</div></section>
-    <section class="continue-section"><div class="section-heading"><div><h2>เรื่องราวที่รอคุณกลับมา</h2><small>กลับไปคุยต่อ จากตรงที่เราค้างไว้</small></div>${state.data.rooms.length ? button("navigate", "ดูบทสนทนาทั้งหมด", "ghost", "arrow", 'data-view="chats"') : ""}</div>${state.data.rooms.length ? `<div class="continue-grid">${state.data.rooms.slice(0, 2).map(roomTile).join("")}</div>` : `<div class="first-story"><span>✧</span><p><strong>เรื่องราวแรกของคุณกำลังรออยู่</strong><br>เลือกตัวละครแล้วเริ่มคุย ความทรงจำจะถูกบันทึกไว้ที่นี่</p>${button("start-chat", "ทักทาย Luna", "secondary", "arrow", 'data-id="luna"')}</div>`}</section>
+    <section class="continue-section"><div class="section-heading"><div><h2>เรื่องราวที่รอคุณกลับมา</h2><small>กลับไปคุยต่อ จากตรงที่เราค้างไว้</small></div>${rooms.length ? button("navigate", "ดูบทสนทนาทั้งหมด", "ghost", "arrow", 'data-view="chats"') : ""}</div>${rooms.length ? `<div class="continue-grid">${rooms.slice(0, 2).map(roomTile).join("")}</div>` : `<div class="first-story"><span>✧</span><p><strong>เรื่องราวแรกของคุณกำลังรออยู่</strong><br>เลือกตัวละครแล้วเริ่มคุย ความทรงจำจะถูกบันทึกไว้ที่นี่</p>${featured ? button("start-chat", `ทักทาย ${esc(featured.name)}`, "secondary", "arrow", `data-id="${featured.id}"`) : button("create-character", "สร้างตัวละคร", "secondary", "plus")}</div>`}</section>
     <footer class="page-foot"><span>${icon("shield")}พื้นที่ส่วนตัว · ทุกตัวละครเป็น AI · แชตบันทึกบนเครื่องนี้</span><span>Made for your imagination. ✧</span></footer></div>`;
 }
 
 function roomTile(room) { return `<button class="continue-card" data-action="open-room" data-id="${room.id}"><img src="${art(room.character)}" alt=""><div><strong>${esc(room.character.name)}</strong><small>${esc(cleanPreview(room.preview))}</small><small>${labels[room.provider]} · ${room.turns} บทสนทนา</small></div>${icon("arrow")}</button>`; }
 
 function chats() {
-  return `<div class="page">${pageHeading("บทสนทนาของฉัน", "ทุกเรื่องราวยังอยู่ตรงนี้ พร้อมให้คุณกลับมาสานต่อ", false)}${state.data.rooms.length ? `<div class="continue-grid">${state.data.rooms.map(roomTile).join("")}</div>` : empty("ยังไม่มีบทสนทนา", "เริ่มพูดคุยกับตัวละครที่คุณสนใจ แล้วกลับมาคุยต่อเมื่อไรก็ได้", "navigate", "ค้นพบตัวละคร", "chat").replace('data-action="navigate"', 'data-action="navigate" data-view="discover"')}</div>`;
+  return `<div class="page">${pageHeading("บทสนทนาของฉัน", "ทุกเรื่องราวยังอยู่ตรงนี้ พร้อมให้คุณกลับมาสานต่อ", false)}${visibleRooms().length ? `<div class="continue-grid">${visibleRooms().map(roomTile).join("")}</div>` : empty("ยังไม่มีบทสนทนา", "เริ่มพูดคุยกับตัวละครที่คุณสนใจ แล้วกลับมาคุยต่อเมื่อไรก็ได้", "navigate", "ค้นพบตัวละคร", "chat").replace('data-action="navigate"', 'data-action="navigate" data-view="discover"')}</div>`;
 }
 
 function charactersPage() {

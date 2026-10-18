@@ -55,7 +55,7 @@ python app.py
 
 รูปต้นฉบับรองรับ PNG/JPEG/WebP ไม่เกิน 10 MB เบราว์เซอร์ย่อด้านยาวไม่เกิน 1,200 px และแปลงก่อนส่ง ภาพที่เก็บต้องเป็น PNG/JPEG ไม่เกิน 2 MiB
 
-หน้า **ฉัน** ใช้แก้ไข ทำสำเนา เก็บเข้าคลัง และนำตัวละครกลับมา หากหน้าแรกว่าง ให้สร้างตัวละครก่อน รุ่นที่ซ่อนตัวละครตัวอย่างจะไม่แสดง Luna/Kael/Mira/Ren ที่ backend เตรียมไว้
+หน้า **ฉัน** ใช้แก้ไข ทำสำเนา เก็บเข้าคลัง และนำตัวละครกลับมา หากหน้าแรกว่าง ให้สร้างตัวละครก่อน UI ซ่อน Luna/Kael/Mira/Ren ที่ backend เตรียมไว้
 
 ### 2. เปิดโปรไฟล์และเริ่มเรื่อง
 
@@ -186,7 +186,15 @@ powershell -ExecutionPolicy Bypass -File .\enable-lan-firewall.ps1 -LanAddress 1
 
 ### C. Launcher เบื้องหลังและ ngrok
 
-[คู่มือ launcher รุ่นใหม่](docs/background-launcher.md) อธิบาย start/stop เบื้องหลังและ ngrok แบบเลือกเปิดเอง **ใช้เฉพาะ checkout ที่มี `tools/start_background.py` และ `stop.ps1` แล้ว** รุ่นเริ่มต้นของ repository มี `start.bat` แบบ foreground และไม่รองรับ `--ngrok`
+[คู่มือ launcher](docs/background-launcher.md) อธิบาย start/stop เบื้องหลังและ ngrok แบบเลือกเปิดเอง บน Windows ใช้คำสั่งต่อไปนี้จากโฟลเดอร์โปรเจกต์:
+
+```powershell
+.\start.bat
+# หยุดเมื่อเลิกใช้
+.\stop.bat
+```
+
+`start.bat` / `start.ps1` เปิดเฉพาะ ELYRA เบื้องหลังเป็นค่าเริ่มต้น ไม่เปิด ngrok การปิดแท็บไม่หยุดเซิร์ฟเวอร์ เปิด LAN ด้วย `.\start.bat --lan 192.168.1.100` โดยแทน IP ให้ตรงเครื่อง หยุด instance เดิมก่อนเปลี่ยนการตั้งค่า ใช้ `.\start.bat --ngrok` เฉพาะเมื่อต้องการ tunnel และตั้งค่า ngrok แล้ว
 
 การเผยแพร่ README ไม่ได้เปิด tunnel หรือ deploy เซิร์ฟเวอร์สาธารณะให้เอง หากเปิดหลายบัญชีต้องเพิ่ม authentication สิทธิ์รายผู้ใช้ การควบคุมค่าใช้จ่าย และงานระบบก่อน รุ่นนี้ยังไม่พร้อมสำหรับ public multi-user production
 

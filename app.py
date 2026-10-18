@@ -1,5 +1,6 @@
 """Single-user development server. Loopback by default; --lan IP enables explicit LAN access."""
 import argparse
+import base64
 import hmac
 import ipaddress
 import json
@@ -33,10 +34,29 @@ def lan_address(value):
     return str(address)
 
 
+def tunnel_origin(value):
+    if not re.fullmatch(r"https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", value):
+        raise ValueError("Tunnel origin must be an exact HTTPS origin without a path or port")
+    return value
+
+
+class TunnelAuthRequired(PermissionError):
+    pass
+
+
 class AppServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, store, lan_host=None):
+    def __init__(self, address, store, lan_host=None, public_origin=None, tunnel_credentials=None, tunnel_no_auth=False):
+        if (tunnel_no_auth and tunnel_credentials) or bool(public_origin) != bool(tunnel_credentials or tunnel_no_auth):
+            raise ValueError("Tunnel origin requires credentials or explicit tunnel_no_auth, exclusively")
+        self.public_origin = tunnel_origin(public_origin) if public_origin else None
+        self.tunnel_authorization = None
+        if tunnel_credentials:
+            username, password = tunnel_credentials.get("username"), tunnel_credentials.get("password")
+            if not isinstance(username, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", username) or not isinstance(password, str) or not 16 <= len(password) <= 128 or not password.isascii() or any(ord(c) < 33 for c in password):
+                raise ValueError("Tunnel credentials require a username and a strong ASCII password (16-128 characters)")
+            self.tunnel_authorization = b"Basic " + base64.b64encode(f"{username}:{password}".encode("ascii"))
         self.lan_host = lan_address(lan_host) if lan_host else None
         if address[0] != "127.0.0.1" and not self.lan_host:
             raise ValueError("Non-loopback binding requires an explicit LAN address")
@@ -51,6 +71,8 @@ class AppServer(ThreadingHTTPServer):
         self.allowed_hosts = {f"127.0.0.1:{self.server_port}", f"localhost:{self.server_port}"}
         if self.lan_host:
             self.allowed_hosts.add(f"{self.lan_host}:{self.server_port}")
+        if self.public_origin:
+            self.allowed_hosts.add(urlsplit(self.public_origin).netloc)
 
     def summarize_later(self, room_id, provider, model):
         """Run the older-turn summary in the background so it never delays or blocks the chat."""
@@ -82,12 +104,18 @@ class Handler(BaseHTTPRequestHandler):
         print(f"[{self.log_date_time_string()}] {self.command} {urlsplit(self.path).path} {args[1] if len(args) > 1 else ''}", flush=True)
 
     def access(self, mutation=False):
+        # Gate every host, including loopback, so proxy header rewriting cannot bypass login.
+        if self.server.tunnel_authorization is not None:
+            supplied = self.headers.get_all("Authorization", [])
+            if len(supplied) != 1 or not hmac.compare_digest(supplied[0].encode("utf-8"), self.server.tunnel_authorization):
+                raise TunnelAuthRequired("ELYRA tunnel login required")
         host = self.headers.get("Host", "")
         origin = self.headers.get("Origin")
         peer = ipaddress.ip_address(self.client_address[0])
         if not peer.is_loopback and (not self.server.lan_host or not any(peer in network for network in LAN_NETWORKS)):
             raise PermissionError("อนุญาตเฉพาะเครื่องนี้และเครือข่าย LAN ที่เปิดไว้")
-        if host not in self.server.allowed_hosts or (origin and origin != f"http://{host}"):
+        expected_origin = self.server.public_origin if self.server.public_origin and host == urlsplit(self.server.public_origin).netloc else f"http://{host}"
+        if host not in self.server.allowed_hosts or len(self.headers.get_all("Host", [])) != 1 or len(self.headers.get_all("Origin", [])) > 1 or (origin and origin != expected_origin):
             raise PermissionError("Host หรือ Origin ไม่ตรงกับที่อยู่ของแอป")
         if mutation and not hmac.compare_digest(self.headers.get("X-Elyra-Token", ""), self.server.token):
             raise PermissionError("กรุณารีเฟรชหน้าเว็บก่อนลองอีกครั้ง")
@@ -98,6 +126,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Cache-Control", "no-store")
+        if status == 401:
+            self.send_header("WWW-Authenticate", 'Basic realm="ELYRA", charset="UTF-8"')
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         if length is not None:
             self.send_header("Content-Length", str(length))
@@ -188,6 +218,8 @@ class Handler(BaseHTTPRequestHandler):
                 content_type += "; charset=utf-8"
             self.send_headers(200, content_type, len(body))
             self.wfile.write(body)
+        except TunnelAuthRequired as exc:
+            self.json_response({"error": str(exc)}, 401)
         except PermissionError as exc:
             self.json_response({"error": str(exc)}, 403)
         except (ValueError, providers.ProviderError) as exc:
@@ -314,6 +346,8 @@ class Handler(BaseHTTPRequestHandler):
                         self.store.delete_room(room_id)
                         return self.json_response({"ok": True})
             self.json_response({"error": "ไม่พบ endpoint"}, 404)
+        except TunnelAuthRequired as exc:
+            self.json_response({"error": str(exc)}, 401)
         except PermissionError as exc:
             self.json_response({"error": str(exc)}, 403)
         except (ValueError, providers.ProviderError, TypeError) as exc:
@@ -416,9 +450,16 @@ def main():
     parser = argparse.ArgumentParser(description="ELYRA local character chat demo")
     parser.add_argument("--port", type=int, default=3000)
     parser.add_argument("--lan", type=lan_address, metavar="PRIVATE_IP", help="Enable LAN access using this computer's private IPv4 address")
+    parser.add_argument("--tunnel-origin", type=tunnel_origin, help="Exact HTTPS tunnel origin; requires credentials or explicit --tunnel-no-auth")
+    tunnel_auth = parser.add_mutually_exclusive_group()
+    tunnel_auth.add_argument("--tunnel-credentials", type=Path, help="Private JSON file with username/password; enables login on ALL hosts")
+    tunnel_auth.add_argument("--tunnel-no-auth", action="store_true", help="Explicitly allow tunnel access without a login")
     args = parser.parse_args()
+    if bool(args.tunnel_origin) != bool(args.tunnel_credentials or args.tunnel_no_auth):
+        parser.error("--tunnel-origin requires --tunnel-credentials or --tunnel-no-auth")
+    credentials = json.loads(args.tunnel_credentials.read_text(encoding="utf-8")) if args.tunnel_credentials else None
     providers.load_env()
-    server = AppServer(("0.0.0.0" if args.lan else "127.0.0.1", args.port), Store(ROOT / ".data" / "elyra.db"), lan_host=args.lan)
+    server = AppServer(("0.0.0.0" if args.lan else "127.0.0.1", args.port), Store(ROOT / ".data" / "elyra.db"), lan_host=args.lan, public_origin=args.tunnel_origin, tunnel_credentials=credentials, tunnel_no_auth=args.tunnel_no_auth)
     print(f"\n  ELYRA demo is ready\n  http://localhost:{server.server_port}\n  Single-user local server. Ctrl+C to stop.\n", flush=True)
     if args.lan:
         print(f"  LAN: http://{args.lan}:{server.server_port}\n  LAN devices share this app's chat data.\n", flush=True)

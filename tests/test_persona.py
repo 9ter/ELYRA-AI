@@ -51,10 +51,13 @@ class PersonaTest(unittest.TestCase):
         self.assertIn("NO explicit sexual content", general)
         self.assertNotIn("NO explicit sexual content", mature)
         self.assertIn("Explicit sexual content between consenting adult characters is allowed", mature)
-        for prompt in (general, mature):
+        for prompt in (general, mature, system_prompt(character, [], "general", compact=True),
+                       system_prompt(character, [], "mature", compact=True)):
             self.assertIn("minors", prompt)
             self.assertIn("non-consent", prompt)
             self.assertIn("real people", prompt)
+            self.assertIn("Fictional non-sexual fights, disagreements and threats are permitted", prompt)
+            self.assertIn("Threats or submission never imply sexual consent", prompt)
 
     def test_side_character_rules_in_prompt(self):
         prompt = system_prompt(validate_character(BASE), [], "mature")

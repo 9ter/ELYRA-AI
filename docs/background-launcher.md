@@ -1,6 +1,6 @@
-# Background launcher รุ่นใหม่ (Windows)
+# Background launcher (Windows)
 
-คู่มือนี้เก็บวิธีใช้ launcher ที่พัฒนาใน working copy แยกจากวิธี `python app.py` ใน README **ตรวจว่า checkout มี `tools/start_background.py`, `stop.bat` และ `stop.ps1` ก่อนใช้** หากไม่มี ให้ใช้ foreground/LAN ตาม README; `start.bat` รุ่นเริ่มต้นเป็น foreground เท่านั้น
+repository มี `tools/start_background.py`, `start.bat`, `start.ps1`, `stop.bat` และ `stop.ps1` สำหรับเปิด/หยุดเบื้องหลังบน Windows หากใช้ checkout รุ่นเก่าที่ยังไม่มีไฟล์เหล่านี้ ให้อัปเดตโค้ดก่อน หรือใช้ `python app.py` แบบ foreground ตาม README
 
 ## เปิดและหยุดเบื้องหลัง
 

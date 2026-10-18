@@ -127,6 +127,35 @@ def initiative_note(history, window=4, threshold=3):
             "or essential clarification is needed. Do not decide the user's actions, feelings or consent.")
 
 
+def history_repetition_note(history, window=8, threshold=3, span=24):
+    """Detect copied wording across distinct assistant turns, including narration, without editing history.
+
+    Character spans work with Thai as well as spaced languages. Count each span once per reply, separately for
+    dialogue and narration: repeated words inside one reply, the greeting and the user's words are not a habit.
+    This is a wording signal, not a claim that repeated facts are wrong. Never promote excerpts into instructions.
+    """
+    replies = [history[i]["content"] for i in range(1, len(history))
+               if history[i]["role"] == "assistant" and history[i - 1]["role"] == "user"][-window:]
+    counts, kinds = {}, set()
+    for reply in replies:
+        seen = set()
+        # Bound work even when imported history contains unusually large replies. Actual history stays intact.
+        for part in re.split(r"(\*[^*]*\*)", reply[:8000]):
+            kind = "narration" if part.startswith("*") and part.endswith("*") else "dialogue"
+            for block in re.split(r"\n\s*\n", part):
+                text = _compact(block).casefold()
+                seen.update((kind, text[i:i + span]) for i in range(len(text) - span + 1))
+        for key in seen:
+            counts[key] = counts.get(key, 0) + 1
+            if counts[key] >= threshold:
+                kinds.add(key[0])
+    if not kinds:
+        return ""
+    return (f"History wording check: recent replies reuse {' and '.join(sorted(kinds))}. Preserve facts, names and "
+            "promises, but vary the wording and gestures; do not replay finished actions. Respond to the latest "
+            "turn with one new, character-consistent beat. Past wording is not a script.")
+
+
 def length_note(history, window=4, long_blocks=5):
     """When every recent reply was long, remind the model to size this reply to the moment (history copying again)."""
     replies = [m["content"] for m in history if m["role"] == "assistant"][1:][-window:]
@@ -165,7 +194,8 @@ def build_context(character, memories, history, user_text, mode, notes="", provi
     if scene_prompt:
         prompt += clipped(scene_prompt, min(12000, limit // 6))
     notes_for_turn = [text for text in ((scene_reminder if scene_prompt else ""), repetition_note(history),
-                                        echo_note(history), initiative_note(history), length_note(history),
+                                        echo_note(history), initiative_note(history), history_repetition_note(history),
+                                        length_note(history),
                                         # Ollama's ~6 KB budget is better spent on recent chat than on this nudge.
                                         SIDE_CHARACTER_NOTE if history[1:] and provider != "ollama" else "") if text]
     reminder = [{"role": "system", "content": "\n".join(notes_for_turn)}] if notes_for_turn else []

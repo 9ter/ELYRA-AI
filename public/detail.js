@@ -61,7 +61,7 @@ const DetailUI = (() => {
   }
 
   function collectionPage() {
-    const characters = state.data.characters.filter(item => !item.archived);
+    const characters = state.data.characters.filter(item => item.custom && !item.archived);
     const owned = characters.reduce((sum, character) => sum + collection(character).owned, 0);
     const total = characters.reduce((sum, character) => sum + collection(character).total, 0);
     return `<div class="page">${pageHeading("คอลเลกชัน", `สะสมแล้ว ${owned} จาก ${total} ภาพ · คุยกับตัวละครเพื่อปลดล็อกภาพใหม่`, false)}

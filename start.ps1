@@ -1,2 +1,2 @@
-Set-Location -LiteralPath $PSScriptRoot
-python app.py @args
+& python (Join-Path $PSScriptRoot 'tools\start_background.py') @args
+exit $LASTEXITCODE
